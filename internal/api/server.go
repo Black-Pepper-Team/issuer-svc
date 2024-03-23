@@ -4,11 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/iden3/go-merkletree-sql/v2"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/iden3/go-merkletree-sql/v2"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -400,6 +401,7 @@ func (s *Server) GetClaims(ctx context.Context, request GetClaimsRequestObject) 
 		request.Params.QueryField,
 		request.Params.QueryValue,
 		request.Params.Self,
+		nil,
 		request.Params.Revoked)
 	if err != nil {
 		return GetClaims400JSONResponse{N400JSONResponse{err.Error()}}, nil

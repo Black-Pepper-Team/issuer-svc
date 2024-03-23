@@ -4,12 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/iden3/go-merkletree-sql/v2"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/iden3/go-merkletree-sql/v2"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/iden3/go-iden3-core/v2/w3c"

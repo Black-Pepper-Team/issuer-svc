@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/google/uuid"
 	"github.com/iden3/go-circuits/v2"
@@ -15,12 +16,14 @@ import (
 	"github.com/iden3/go-iden3-crypto/poseidon"
 	"github.com/iden3/go-merkletree-sql/v2"
 	rstypes "github.com/iden3/go-rapidsnark/types"
+	"github.com/iden3/go-schema-processor/v2/verifiable"
 	"github.com/jackc/pgx/v4"
 
 	"github.com/rarimo/issuer-node/internal/core/domain"
 	"github.com/rarimo/issuer-node/internal/core/event"
 	"github.com/rarimo/issuer-node/internal/core/ports"
 	"github.com/rarimo/issuer-node/internal/db"
+	"github.com/rarimo/issuer-node/internal/gateways/contracts"
 	"github.com/rarimo/issuer-node/internal/kms"
 	"github.com/rarimo/issuer-node/internal/log"
 	"github.com/rarimo/issuer-node/pkg/pubsub"
@@ -39,14 +42,29 @@ var (
 )
 
 const (
-	jobID              jobIDType = "job-id"
-	ttl                          = 60 * time.Second
-	transactionCleanup           = 3600 * time.Second
+	jobID                  jobIDType = "job-id"
+	ttl                              = 60 * time.Second
+	transactionCleanup               = 3600 * time.Second
+	bpleapcpkerSchema                = "https://nftstorage.link/ipfs/bafkreidcbkn6bqyrsmj4b3oewezmxdgzy2aim7myddhdw56witqyurn3c4"
+	votingCredentialSchema           = "https://nftstorage.link/ipfs/bafkreichj5fsquda6txr46gxgfkhjlfhkkxheoydws4wd3mym5vlzi2orm"
+	useridVCSField                   = "userid"
+	featuresVectorVCSField           = "f"
+	pubkeyVCSField                   = "pk"
+	metadataVCSField                 = "metadata"
 )
 
 // PublisherGateway - Define the interface for publishers.
 type PublisherGateway interface {
-	PublishState(ctx context.Context, identifier *w3c.DID, latestState *merkletree.Hash, newState *merkletree.Hash, isOldStateGenesis bool, proof *rstypes.ProofData, identity *domain.Identity) (*string, error)
+	PublishState(
+		ctx context.Context,
+		identifier *w3c.DID,
+		latestState *merkletree.Hash,
+		newState *merkletree.Hash,
+		isOldStateGenesis bool,
+		proof *rstypes.ProofData,
+		identity *domain.Identity,
+		biometricData []contracts.IBioRegistryBiometricData,
+	) (*string, error)
 }
 
 type publisher struct {
@@ -229,11 +247,43 @@ func (p *publisher) publishProof(ctx context.Context, identifier *w3c.DID, newSt
 	isLatestStateGenesis := latestState.PreviousState == nil
 
 	var zkProofData *rstypes.ProofData
+	var biometricData []contracts.IBioRegistryBiometricData
 
 	if identity.KeyType == string(kms.KeyTypeBabyJubJub) {
 		id, err := core.IDFromDID(*did)
 		if err != nil {
 			return nil, err
+		}
+
+		isIdentityStateNull := true
+		newClaimsFiler, err := ports.NewClaimsFilter(nil, nil, nil, nil, nil, &isIdentityStateNull, nil, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		claimsToPublish, err := p.claimService.GetAll(ctx, *did, newClaimsFiler)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, claim := range claimsToPublish {
+			var vc verifiable.W3CCredential
+
+			if err := claim.Data.AssignTo(&vc); err != nil {
+				return nil, err
+			}
+
+			vcSchema := vc.CredentialSchema.ID
+			if vcSchema != votingCredentialSchema && vcSchema != bpleapcpkerSchema {
+				continue
+			}
+
+			biometricData = append(biometricData, contracts.IBioRegistryBiometricData{
+				Uuid:          vc.CredentialSubject[useridVCSField].(string),
+				UserAddress:   common.HexToAddress(vc.CredentialSubject[pubkeyVCSField].(string)),
+				BiometricInfo: []byte(vc.CredentialSubject[featuresVectorVCSField].(string)),
+				UserMetadata:  vc.CredentialSubject[metadataVCSField].(string),
+			})
 		}
 
 		authClaim, err := p.claimService.GetAuthClaimForPublishing(ctx, did, *newState.State)
@@ -291,7 +341,7 @@ func (p *publisher) publishProof(ctx context.Context, identifier *w3c.DID, newSt
 
 	// 7. Publish state and receive txID
 
-	txID, err := p.publisherGateway.PublishState(ctx, did, latestStateHash, newStateHash, isLatestStateGenesis, zkProofData, identity)
+	txID, err := p.publisherGateway.PublishState(ctx, did, latestStateHash, newStateHash, isLatestStateGenesis, zkProofData, identity, biometricData)
 	if err != nil {
 		return nil, err
 	}

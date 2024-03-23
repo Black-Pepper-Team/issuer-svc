@@ -49,21 +49,22 @@ type AgentRequest struct {
 
 // ClaimsFilter struct
 type ClaimsFilter struct {
-	Self            *bool
-	Revoked         *bool
-	ExpiredOn       *time.Time
-	SchemaHash      string
-	SchemaType      string
-	Subject         string
-	QueryField      string
-	QueryFieldValue string
-	FTSQuery        string
-	FTSAndCond      bool
-	Proofs          []verifiable.ProofType
+	Self                *bool
+	Revoked             *bool
+	ExpiredOn           *time.Time
+	SchemaHash          string
+	SchemaType          string
+	IsIdentityStateNull bool
+	Subject             string
+	QueryField          string
+	QueryFieldValue     string
+	FTSQuery            string
+	FTSAndCond          bool
+	Proofs              []verifiable.ProofType
 }
 
 // NewClaimsFilter returns a valid claims filter
-func NewClaimsFilter(schemaHash, schemaType, subject, queryField, queryValue *string, self, revoked *bool) (*ClaimsFilter, error) {
+func NewClaimsFilter(schemaHash, schemaType, subject, queryField, queryValue *string, isIdentityStateNull *bool, self, revoked *bool) (*ClaimsFilter, error) {
 	var filter ClaimsFilter
 
 	if self != nil && *self {
@@ -89,6 +90,9 @@ func NewClaimsFilter(schemaHash, schemaType, subject, queryField, queryValue *st
 	}
 	if queryValue != nil {
 		filter.QueryFieldValue = *queryValue
+	}
+	if isIdentityStateNull != nil {
+		filter.IsIdentityStateNull = false
 	}
 
 	return &filter, nil

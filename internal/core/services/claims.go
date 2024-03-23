@@ -4,11 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	sql "github.com/iden3/go-merkletree-sql/db/pgx/v2"
 	"math/big"
 	"net/url"
 	"strings"
 	"time"
+
+	sql "github.com/iden3/go-merkletree-sql/db/pgx/v2"
 
 	"github.com/google/uuid"
 	core "github.com/iden3/go-iden3-core/v2"

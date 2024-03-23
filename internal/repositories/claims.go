@@ -796,6 +796,9 @@ func buildGetAllQueryAndFilters(issuerID w3c.DID, filter *ports.ClaimsFilter) (s
 		filters = append(filters, fmt.Sprintf("%%%s%%", filter.SchemaType))
 		query = fmt.Sprintf("%s and schema_type like $%d", query, len(filters))
 	}
+	if filter.IsIdentityStateNull {
+		query = fmt.Sprintf("%s and identity_state is null", query)
+	}
 	if filter.Revoked != nil {
 		filters = append(filters, *filter.Revoked)
 		query = fmt.Sprintf("%s and claims.revoked = $%d", query, len(filters))

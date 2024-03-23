@@ -9,7 +9,6 @@ import (
 
 	ethCommon "github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/iden3/contracts-abi/state/go/abi"
 	core "github.com/iden3/go-iden3-core/v2"
 	"github.com/iden3/go-iden3-core/v2/w3c"
 	"github.com/iden3/go-merkletree-sql/v2"
@@ -17,6 +16,7 @@ import (
 
 	"github.com/rarimo/issuer-node/internal/common"
 	"github.com/rarimo/issuer-node/internal/core/domain"
+	"github.com/rarimo/issuer-node/internal/gateways/contracts"
 	"github.com/rarimo/issuer-node/internal/kms"
 	"github.com/rarimo/issuer-node/internal/log"
 	"github.com/rarimo/issuer-node/pkg/blockchain/eth"
@@ -29,7 +29,7 @@ type PublisherEthGateway struct {
 	kms                   *kms.KMS
 	publishingKeyID       kms.KeyID
 	ethRPCResponseTimeout time.Duration
-	contractBinding       *abi.State
+	contractBinding       *contracts.BioRegistry
 }
 
 const rpcTimeout = 10 * time.Second
@@ -46,7 +46,7 @@ func NewPublisherEthGateway(_client *eth.Client, contract ethCommon.Address, key
 func newStateService(client *eth.Client, addr ethCommon.Address, to time.Duration, kServ *kms.KMS, kPath kms.KeyID) (*PublisherEthGateway, error) {
 	c := client.GetEthereumClient()
 
-	binding, err := abi.NewState(addr, c)
+	binding, err := contracts.NewBioRegistry(addr, c)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func newStateService(client *eth.Client, addr ethCommon.Address, to time.Duratio
 }
 
 // PublishState creates or updates state in the blockchain
-func (pb *PublisherEthGateway) PublishState(ctx context.Context, identifier *w3c.DID, latestState, newState *merkletree.Hash, isOldStateGenesis bool, proof *rstypes.ProofData, identity *domain.Identity) (*string, error) {
+func (pb *PublisherEthGateway) PublishState(ctx context.Context, identifier *w3c.DID, latestState, newState *merkletree.Hash, isOldStateGenesis bool, proof *rstypes.ProofData, identity *domain.Identity, biometricData []contracts.IBioRegistryBiometricData) (*string, error) {
 	pb.rw.Lock()
 	defer pb.rw.Unlock()
 
@@ -78,34 +78,6 @@ func (pb *PublisherEthGateway) PublishState(ctx context.Context, identifier *w3c
 	}
 
 	switch identity.KeyType {
-	case string(kms.KeyTypeEthereum):
-		keyIDs, err := pb.kms.KeysByIdentity(ctx, *identifier)
-		if err != nil {
-			return nil, err
-		}
-
-		var sigKeyID kms.KeyID
-		for _, v := range keyIDs {
-			if v.Type == kms.KeyTypeEthereum {
-				sigKeyID = v
-				break
-			}
-		}
-
-		ctxWT, cancel := context.WithTimeout(ctx, pb.ethRPCResponseTimeout)
-		defer cancel()
-		opts, err := pb.client.CreateTxOpts(ctxWT, sigKeyID)
-		if err != nil {
-			log.Error(ctx, "failed to create tx opts", "err", err)
-			return nil, err
-		}
-		log.Info(ctx, "transfer state transaction", "from", opts.From.String())
-
-		tx, err = pb.contractBinding.TransitStateGeneric(opts, id.BigInt(), latestState.BigInt(), newState.BigInt(), isOldStateGenesis, big.NewInt(1), []byte{})
-		if err != nil {
-			return nil, err
-		}
-
 	case string(kms.KeyTypeBabyJubJub):
 		ctxWT, cancel := context.WithTimeout(ctx, pb.ethRPCResponseTimeout)
 		defer cancel()
@@ -120,7 +92,7 @@ func (pb *PublisherEthGateway) PublishState(ctx context.Context, identifier *w3c
 			return nil, err
 		}
 
-		tx, err = pb.contractBinding.TransitState(opts, id.BigInt(), latestState.BigInt(), newState.BigInt(), isOldStateGenesis, a, b, c)
+		tx, err = pb.contractBinding.TransitStateAndBiometricData(opts, id.BigInt(), latestState.BigInt(), newState.BigInt(), isOldStateGenesis, a, b, c, biometricData)
 		if err != nil {
 			return nil, err
 		}
